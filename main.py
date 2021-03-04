@@ -38,39 +38,41 @@ class DistributedDatabases:
         self.port = port
 
     def book_hotel_and_fly(self):
-        t_fly_booking = TwoPhaseTransaction("d_db_fly_booking", self.format_id, self.gtrid, "fly_booking",
+        try:
+            t_fly_booking = TwoPhaseTransaction("d_db_fly_booking", self.format_id, self.gtrid, "fly_booking",
+                                                self.user, self.password, self.port)
+            t_hotel_booking = TwoPhaseTransaction("d_db_hotel_booking", self.format_id, self.gtrid, "hotel_booking",
+                                                  self.user, self.password, self.port)
+            t_account = TwoPhaseTransaction("d_db_account", self.format_id, self.gtrid, "account",
                                             self.user, self.password, self.port)
-        t_hotel_booking = TwoPhaseTransaction("d_db_hotel_booking", self.format_id, self.gtrid, "hotel_booking",
-                                              self.user, self.password, self.port)
-        t_account = TwoPhaseTransaction("d_db_account", self.format_id, self.gtrid, "account",
-                                        self.user, self.password, self.port)
+            t_fly_booking.begin_tpc("""
+                        INSERT INTO fly_booking (clientName, flyNumber, "from", "to", date)
+                        VALUES ('Ivan Popov', 1, 'Lviv', 'NY', '01.01.2021')
+                    """)
 
-        t_fly_booking.begin_tpc("""
-                    INSERT INTO fly_booking (clientName, flyNumber, "from", "to", date)
-                    VALUES ('Ivan Popov', 1, 'Lviv', 'NY', '01.01.2021')
+            t_hotel_booking.begin_tpc("""
+                INSERT INTO hotel_booking (clientname, hotelname, arrival, departure)
+                VALUES ('Ivan Popov', 'Hilton', '02.01.2021', '08.01.2021')
                 """)
 
-        t_hotel_booking.begin_tpc("""
-            INSERT INTO hotel_booking (clientname, hotelname, arrival, departure)
-            VALUES ('Ivan Popov', 'Hilton', '02.01.2021', '08.01.2021')
-            """)
+            try:
+                t_account.begin_tpc("""
+                    UPDATE account SET amount=amount-200 WHERE clientName='Ivan Popov'
+                """)
+            except psycopg2.errors.CheckViolation:
+                print('booking failure, no money on account')
+                t_account.rollback()
+                t_fly_booking.rollback()
+                t_hotel_booking.rollback()
+            else:
+                print('booking success')
+                t_fly_booking.commit()
+                t_hotel_booking.commit()
 
-        try:
-            t_account.begin_tpc("""
-            UPDATE account SET amount=amount-200 WHERE clientName='Ivan Popov'
-        """)
-        except psycopg2.errors.CheckViolation:
-            print('booking failure, no money on account')
-
-            t_fly_booking.rollback()
-            t_hotel_booking.rollback()
-        else:
-            print('booking success')
-            t_fly_booking.commit()
-            t_hotel_booking.commit()
-
-            # to imitate lock comment this string
-            t_account.commit()
+                # to imitate lock comment this string
+                t_account.commit()
+        except psycopg2.Error as e:
+            print(e)
 
     def recover(self):
         TwoPhaseTransaction("d_db_fly_booking", self.format_id, self.gtrid, "fly_booking",
