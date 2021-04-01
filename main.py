@@ -55,10 +55,9 @@ class DistributedDatabases:
                 VALUES ('Ivan Popov', 'Hilton', '02.01.2021', '08.01.2021')
                 """)
 
-            try:
-                t_account.begin_tpc("""
-                    UPDATE account SET amount=amount-200 WHERE clientName='Ivan Popov'
-                """)
+            t_account.begin_tpc("""
+                UPDATE account SET amount=amount-200 WHERE clientName='Ivan Popov'
+            """)
             except psycopg2.errors.CheckViolation:
                 print('booking failure, no money on account')
                 t_account.rollback()
